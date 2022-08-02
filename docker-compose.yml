@@ -1,0 +1,44 @@
+version: '2.0'
+services:
+  gentle_scanner:
+    build: .
+    network_mode: "host"
+    volumes:
+      - ./:/home/gentle_scanner
+    command: ./start.sh gentle_scanner.py
+    restart: on-failure
+    mem_limit: 2048m
+    logging:
+        driver: "json-file"
+        options:
+            max-file: "10"
+            max-size: "10m"    
+
+  gentle_scanner_bot:
+    build: .
+    network_mode: "host"
+    volumes:
+      - ./:/home/gentle_scanner
+    command: ./start.sh gentle_scanner_bot.py
+    restart: on-failure
+    mem_limit: 2048m
+    logging:
+        driver: "json-file"
+        options:
+            max-file: "10"
+            max-size: "10m"    
+
+  gentle_scanner_bot_notifier:
+    build: .
+    network_mode: "host"
+    volumes:
+      - ./:/home/gentle_scanner
+    command: ./start.sh gentle_scanner_bot_notifier.py
+    restart: on-failure
+    mem_limit: 2048m
+    logging:
+        driver: "json-file"
+        options:
+            max-file: "10"
+            max-size: "10m"    
+    
