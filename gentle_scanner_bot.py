@@ -130,7 +130,7 @@ def show(update, context):
 
     ips = [f.removesuffix(".txt") for f in files if validate_ip(f.removesuffix(".txt"))]
 
-    ans = ""
+    ans = []
 
     for ip in sorted(ips):
         desc = ""
@@ -140,21 +140,24 @@ def show(update, context):
             pass
 
 
-        ports = {}
-        for port_file in os.listdir(f"db/{ip}"):
-            try:
-                port = int(port_file.removesuffix(".txt"))
-            except ValueError:
-                continue
+        try:
+            ports = {}
+            for port_file in os.listdir(f"db/{ip}"):
+                try:
+                    port = int(port_file.removesuffix(".txt"))
+                except ValueError:
+                    continue
 
-            timestamp = 0
-            try:
-                timestamp = open(f"db/{ip}/{port_file}").read()
-                timestamp = int(timestamp)
-            except OSError:
-                pass
+                timestamp = 0
+                try:
+                    timestamp = open(f"db/{ip}/{port_file}").read()
+                    timestamp = int(timestamp)
+                except OSError:
+                    pass
 
-            ports[port] = timestamp
+                ports[port] = timestamp
+        except FileNotFoundError:
+            pass
 
 
         try:
@@ -178,9 +181,9 @@ def show(update, context):
         except Exception as E:
             pass
 
-        ans += f"{ip} {desc} ({stats.get(ip, 0)} port probes):\n"
+        ans.append(f"{ip} {desc} ({stats.get(ip, 0)} probes):")
         if not ports:
-            ans += f"  no open ports yet"
+            ans.append(f"  no ports yet")
         else:
             for port in sorted(ports):
                 sec_ago = int(time.time()) - ports[port]
@@ -189,13 +192,16 @@ def show(update, context):
                 elif sec_ago > 3600:
                     ago_text = f"{sec_ago//3600} hours ago"
                 elif sec_ago > 60:
-                    ago_text = f"{sec_ago//60} minutes ago"
+                    ago_text = f"{sec_ago//60} mins ago"
                 else:
-                    ago_text = f"{sec_ago} seconds ago"
+                    ago_text = f"{sec_ago} secs ago"
 
-                ans += f"  {port:5d} {ago_text}\n"
+                ans.append(f"  {port:5d} {ago_text}")
 
-    update.message.reply_text(fmt(ans))
+    LINES_PER_MSG = 30
+    for start_line in range(0, len(ans), LINES_PER_MSG):
+        msg = "\n".join(ans[start_line:start_line + LINES_PER_MSG])
+        update.message.reply_text(fmt(msg))
 
 
 def reset(update, context):

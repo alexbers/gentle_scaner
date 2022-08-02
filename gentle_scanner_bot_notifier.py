@@ -49,20 +49,23 @@ def find_and_send_alerts(bot):
                 pass
 
             ports = {}
-            for port_file in os.listdir(f"db/{ip}"):
-                try:
-                    port = int(port_file.removesuffix(".txt"))
-                except ValueError:
-                    continue
+            try:
+                for port_file in os.listdir(f"db/{ip}"):
+                    try:
+                        port = int(port_file.removesuffix(".txt"))
+                    except ValueError:
+                        continue
 
-                timestamp = 0
-                try:
-                    timestamp = open(f"db/{ip}/{port_file}").read()
-                    timestamp = int(timestamp)
-                except OSError:
-                    pass
+                    timestamp = 0
+                    try:
+                        timestamp = open(f"db/{ip}/{port_file}").read()
+                        timestamp = int(timestamp)
+                    except OSError:
+                        pass
 
-                ports[port] = timestamp
+                    ports[port] = timestamp
+            except FileNotFoundError:
+                continue
 
             try:
                 for line in open(f"db/bot/{account}/ignore_ports.txt"):
