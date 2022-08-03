@@ -16,19 +16,70 @@ HELP_TEXT = r"""
 
 Commands:
 ```
-/add 127\.0\.0\.1 localhost
-/hosts
-/ports
-/reset 127\.0\.0\.1 80
-/del 127\.0\.0\.1
+/add   - add a new host
+/hosts - print hosts list
+/port  - print ports list
+/reset - reenable alert on host and port
+/del   - delete a host
 ```
 """
 
-def start(update, context):
+ADD_TEXT = r"""
+*Send me ip and description to add host to scanlist*
+
+Examples:
+127\.0\.0\.1 localhost
+127\.0\.0\.\[1\-2,4\] several hosts
+"""
+
+DEL_TEXT = r"""
+*Send me ip to del host to scanlist*
+
+Examples:
+127\.0\.0\.1
+127\.0\.0\.\[1\-2,4\]
+"""
+
+RESET_TEXT = r"""
+*Send me ip and port to reset port detection and alert the next time it opens*
+
+Examples:
+127\.0\.0\.1 80
+"""
+
+# STATES: IDLE, AWAIT_ADD, AWAIT_DEL, AWAIT_RESET
+
+def get_user_state(from_id):
+    try:
+        return open(f"db/bot/{from_id}/state.txt").read().strip()
+    except OSError:
+        return "IDLE"
+
+
+def set_user_state(from_id, state):
+    os.makedirs(f"db/bot/{from_id}", exist_ok=True)
+    open(f"db/bot/{from_id}/state.txt", "w").write(state)
+
+
+def start_cmd(update, context):
+    from_id = int(update.message.chat.id)
+    set_user_state(from_id, "IDLE")
+
     update.message.reply_text(HELP_TEXT)
 
 def message(update, context):
-    update.message.reply_text(HELP_TEXT)
+    from_id = int(update.message.chat.id)
+
+    state = get_user_state(from_id)
+
+    if state == "IDLE":
+        update.message.reply_text(HELP_TEXT)
+    elif state == "AWAIT_ADD":
+        add(update, context)
+    elif state == "AWAIT_DEL":
+        del_ip(update, context)
+    elif state == "AWAIT_RESET":
+        reset(update, context)
 
 
 def validate_ip(ip):
@@ -59,12 +110,16 @@ def update_scanner_ips():
 def fmt(text):
     return "```\n" + text + "\n```"
 
+def add_cmd(update, context):
+    from_id = int(update.message.chat.id)
+
+    set_user_state(from_id, "AWAIT_ADD")
+    update.message.reply_text(ADD_TEXT)
+
 def add(update, context):
-    fields = re.split(r"\s+", update.message.text, 2)
-    if len(fields) == 3:
-        command, ip_hostlist, description = fields
-    elif len(fields) == 2:
-        command, ip_hostlist, description = fields[0], fields[1], ""
+    fields = re.split(r"\s+", update.message.text, 1)
+    if len(fields) == 2:
+        ip_hostlist, description = fields
     else:
         update.message.reply_text("bad args")
         return
@@ -110,10 +165,17 @@ def add(update, context):
     update_scanner_ips()
 
 
+def del_cmd(update, context):
+    from_id = int(update.message.chat.id)
+
+    set_user_state(from_id, "AWAIT_DEL")
+    update.message.reply_text(DEL_TEXT)
+
+
 def del_ip(update, context):
     fields = re.split(r"\s+", update.message.text, 1)
-    if len(fields) == 2:
-        command, ip_hostlist = fields
+    if len(fields) == 1:
+        ip_hostlist = fields[0]
     else:
         update.message.reply_text("bad args")
         return
@@ -148,8 +210,10 @@ def del_ip(update, context):
     update_scanner_ips()
 
 
-def hosts(update, context):
+def hosts_cmd(update, context):
     from_id = int(update.message.chat.id)
+
+    set_user_state(from_id, "IDLE")
 
     try:
         files = os.listdir(f"db/bot/{from_id}")
@@ -181,12 +245,13 @@ def hosts(update, context):
 
     for start_line in range(0, len(ans), LINES_PER_MSG):
         msg = "\n".join(ans[start_line:start_line + LINES_PER_MSG])
-        print(fmt(msg))
         update.message.reply_text(fmt(msg))
 
 
-def ports(update, context):
+def ports_cmd(update, context):
     from_id = int(update.message.chat.id)
+
+    set_user_state(from_id, "IDLE")
 
     try:
         files = os.listdir(f"db/bot/{from_id}")
@@ -267,21 +332,22 @@ def ports(update, context):
 
     LINES_PER_MSG = 30
 
-    # if no_port_ips:
-    #     ans.append("no ports yet:")
-    #     # for ip in no_port_ips:
-    #     ans.append(" " + hostlist.collect_hostlist(no_port_ips))
-
     for start_line in range(0, len(ans), LINES_PER_MSG):
         msg = "\n".join(ans[start_line:start_line + LINES_PER_MSG])
-        print(fmt(msg))
         update.message.reply_text(fmt(msg))
+
+
+def reset_cmd(update, context):
+    from_id = int(update.message.chat.id)
+
+    set_user_state(from_id, "AWAIT_RESET")
+    update.message.reply_text(RESET_TEXT)
 
 
 def reset(update, context):
     fields = re.split(r"\s+", update.message.text, 2)
-    if len(fields) == 3:
-        command, ip, port = fields
+    if len(fields) == 2:
+        ip, port = fields
     else:
         update.message.reply_text("bad args")
         return
@@ -320,13 +386,13 @@ def main():
     updater = Updater(BOT_TOKEN, defaults=Defaults(parse_mode=ParseMode.MARKDOWN_V2))
 
     dispatcher = updater.dispatcher
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CommandHandler("help", start))
-    dispatcher.add_handler(CommandHandler("add", add))
-    dispatcher.add_handler(CommandHandler("del", del_ip))
-    dispatcher.add_handler(CommandHandler("hosts", hosts))
-    dispatcher.add_handler(CommandHandler("ports", ports))
-    dispatcher.add_handler(CommandHandler("reset", reset))
+    dispatcher.add_handler(CommandHandler("start", start_cmd))
+    dispatcher.add_handler(CommandHandler("help", start_cmd))
+    dispatcher.add_handler(CommandHandler("add", add_cmd))
+    dispatcher.add_handler(CommandHandler("del", del_cmd))
+    dispatcher.add_handler(CommandHandler("hosts", hosts_cmd))
+    dispatcher.add_handler(CommandHandler("ports", ports_cmd))
+    dispatcher.add_handler(CommandHandler("reset", reset_cmd))
     dispatcher.add_handler(MessageHandler(Filters.all, message))
 
     updater.start_polling()
