@@ -62,19 +62,23 @@ def fmt(text):
 def add(update, context):
     fields = re.split(r"\s+", update.message.text, 2)
     if len(fields) == 3:
-        command, ip, description = fields
+        command, ip_hostlist, description = fields
     elif len(fields) == 2:
-        command, ip, description = fields[0], fields[1], ""
+        command, ip_hostlist, description = fields[0], fields[1], ""
     else:
         update.message.reply_text("bad args")
         return
 
-    if not validate_ip(ip):
+    try:
+        ips = hostlist.expand_hostlist(ip_hostlist)
+    except hostlist.BadHostlist:
         update.message.reply_text("bad ip")
         return
 
-    # normalize ip
-    ip = socket.inet_ntoa(socket.inet_aton(ip))
+    MAX_IPS_PER_REQ = 256
+    if len(ips) > MAX_IPS_PER_REQ:
+        update.message.reply_text("too many ips")
+        return
 
     if not re.fullmatch(r"[\w. _()-]+", description):
         update.message.reply_text("bad description")
@@ -84,40 +88,63 @@ def add(update, context):
 
     try:
         os.makedirs(f"db/bot/{from_id}", exist_ok=True)
-        open(f"db/bot/{from_id}/{ip}.txt", "w").write(description)
     except OSError:
-        update.message.reply_text("saving error")
+        update.message.reply_text("db error")
         return
 
-    update.message.reply_text("ok")
+    count = 0
+    for ip in ips:
+        if not validate_ip(ip):
+            continue
+
+        # normalize ip
+        ip = socket.inet_ntoa(socket.inet_aton(ip))
+
+        try:
+            open(f"db/bot/{from_id}/{ip}.txt", "w").write(description)
+            count += 1
+        except OSError:
+            continue
+
+    update.message.reply_text(f"ok, {count} good ips added")
     update_scanner_ips()
 
 
 def del_ip(update, context):
     fields = re.split(r"\s+", update.message.text, 1)
     if len(fields) == 2:
-        command, ip = fields
+        command, ip_hostlist = fields
     else:
         update.message.reply_text("bad args")
         return
 
-    if not validate_ip(ip):
+    try:
+        ips = hostlist.expand_hostlist(ip_hostlist)
+    except hostlist.BadHostlist:
         update.message.reply_text("bad ip")
+        return
+
+    MAX_IPS_PER_REQ = 256
+    if len(ips) > MAX_IPS_PER_REQ:
+        update.message.reply_text("too many ips")
         return
 
     from_id = int(update.message.chat.id)
 
-    try:
-        os.unlink(f"db/bot/{from_id}/{ip}.txt")
-    except FileNotFoundError:
-        update.message.reply_text("ip not found")
-        return
+    count = 0
+    for ip in ips:
+        if not validate_ip(ip):
+            continue
 
-    except OSError:
-        update.message.reply_text("saving error")
-        return
+        try:
+            os.unlink(f"db/bot/{from_id}/{ip}.txt")
+            count += 1
+        except FileNotFoundError:
+            continue
+        except OSError:
+            continue
 
-    update.message.reply_text("ok")
+    update.message.reply_text(f"ok, {count} good ips deleted")
     update_scanner_ips()
 
 
@@ -129,7 +156,6 @@ def hosts(update, context):
     except OSError:
         update.message.reply_text("no address added yet")
         return
-
 
 
     ips = [f.removesuffix(".txt") for f in files if validate_ip(f.removesuffix(".txt"))]
@@ -144,15 +170,6 @@ def hosts(update, context):
             pass
 
         desc_to_ips[desc] = desc_to_ips.get(desc, []) + [ip]
-
-        # stats = {}
-
-        # try:
-        #     stats = json.load(open(f"db/stats.txt"))
-        # except Exception as E:
-        #     pass
-
-        # ans.append(f"{ip} {desc} ({stats.get(ip, 0)} probes)")
 
     ans = []
 
