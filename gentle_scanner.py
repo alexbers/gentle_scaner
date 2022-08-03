@@ -100,7 +100,7 @@ async def main():
             print_log(f"stop scan {ip}")
             del ip_to_task[ip]
 
-        print_log(f"stats {ip_to_count}")
+        print_log(f"checked ports: {sum(ip_to_count.values())}")
 
         try:
             open("db/stats.txt", "w").write(json.dumps(ip_to_count))

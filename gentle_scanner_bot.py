@@ -4,6 +4,7 @@ import os
 import time
 import json
 
+import hostlist
 from telegram import Update, ParseMode
 from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext, Filters, Defaults
 
@@ -16,7 +17,8 @@ HELP_TEXT = r"""
 Commands:
 ```
 /add 127\.0\.0\.1 localhost
-/show
+/hosts
+/ports
 /reset 127\.0\.0\.1 80
 /del 127\.0\.0\.1
 ```
@@ -119,7 +121,54 @@ def del_ip(update, context):
     update_scanner_ips()
 
 
-def show(update, context):
+def hosts(update, context):
+    from_id = int(update.message.chat.id)
+
+    try:
+        files = os.listdir(f"db/bot/{from_id}")
+    except OSError:
+        update.message.reply_text("no address added yet")
+        return
+
+
+
+    ips = [f.removesuffix(".txt") for f in files if validate_ip(f.removesuffix(".txt"))]
+
+    desc_to_ips = {}
+
+    for ip in sorted(ips):
+        desc = ""
+        try:
+            desc = open(f"db/bot/{from_id}/{ip}.txt").read()
+        except OSError:
+            pass
+
+        desc_to_ips[desc] = desc_to_ips.get(desc, []) + [ip]
+
+        # stats = {}
+
+        # try:
+        #     stats = json.load(open(f"db/stats.txt"))
+        # except Exception as E:
+        #     pass
+
+        # ans.append(f"{ip} {desc} ({stats.get(ip, 0)} probes)")
+
+    ans = []
+
+    for desc in desc_to_ips:
+        ans.append(f"{desc}:")
+        ans.append("  " + hostlist.collect_hostlist(desc_to_ips[desc]))
+
+    LINES_PER_MSG = 30
+
+    for start_line in range(0, len(ans), LINES_PER_MSG):
+        msg = "\n".join(ans[start_line:start_line + LINES_PER_MSG])
+        print(fmt(msg))
+        update.message.reply_text(fmt(msg))
+
+
+def ports(update, context):
     from_id = int(update.message.chat.id)
 
     try:
@@ -132,13 +181,14 @@ def show(update, context):
 
     ans = []
 
+    no_port_ips = []
+
     for ip in sorted(ips):
         desc = ""
         try:
             desc = open(f"db/bot/{from_id}/{ip}.txt").read()
         except OSError:
             pass
-
 
         try:
             ports = {}
@@ -181,10 +231,10 @@ def show(update, context):
         except Exception as E:
             pass
 
-        ans.append(f"{ip} {desc} ({stats.get(ip, 0)} probes):")
         if not ports:
-            ans.append(f"  no ports yet")
+            no_port_ips.append(ip)
         else:
+            ans.append(f"{ip} {desc} ({stats.get(ip, 0)} probes):")
             for port in sorted(ports):
                 sec_ago = int(time.time()) - ports[port]
                 if sec_ago > 86400:
@@ -199,8 +249,15 @@ def show(update, context):
                 ans.append(f"  {port:5d} {ago_text}")
 
     LINES_PER_MSG = 30
+
+    # if no_port_ips:
+    #     ans.append("no ports yet:")
+    #     # for ip in no_port_ips:
+    #     ans.append(" " + hostlist.collect_hostlist(no_port_ips))
+
     for start_line in range(0, len(ans), LINES_PER_MSG):
         msg = "\n".join(ans[start_line:start_line + LINES_PER_MSG])
+        print(fmt(msg))
         update.message.reply_text(fmt(msg))
 
 
@@ -250,7 +307,8 @@ def main():
     dispatcher.add_handler(CommandHandler("help", start))
     dispatcher.add_handler(CommandHandler("add", add))
     dispatcher.add_handler(CommandHandler("del", del_ip))
-    dispatcher.add_handler(CommandHandler("show", show))
+    dispatcher.add_handler(CommandHandler("hosts", hosts))
+    dispatcher.add_handler(CommandHandler("ports", ports))
     dispatcher.add_handler(CommandHandler("reset", reset))
     dispatcher.add_handler(MessageHandler(Filters.all, message))
 
